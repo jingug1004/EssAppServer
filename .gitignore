@@ -1,0 +1,49 @@
+*.java.hsp
+*.sonarj
+*.sw*
+.DS_Store
+.settings
+.springBeans
+bin
+build.sh
+integration-repo
+ivy-cache
+jxl.log
+jmx.log
+derby.log
+spring-test/test-output/
+.gradle
+argfile*
+activemq-data/
+
+classes/
+/build
+buildSrc/build
+/spring-*/build
+/src/asciidoc/build
+target/
+
+# Eclipse artifacts, including WTP generated manifests
+.classpath
+.project
+spring-*/src/main/java/META-INF/MANIFEST.MF
+
+# IDEA artifacts and output dirs
+*.iml
+*.ipr
+*.iws
+.idea
+out
+test-output
+atlassian-ide-plugin.xml
+.gradletasknamecache
+
+
+# node client는 여기서 관리를 하지 않아용~~~
+# 원래는 별도로 관리하려 했으니 합쳐요. 빌드 마친 파일을 커밋함.
+src/main/webapp/client/
+others
+deployWin_real.sh
+src/main/resources/conf/release.properties
+.idea
+server.iml

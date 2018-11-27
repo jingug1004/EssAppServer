@@ -1,0 +1,254 @@
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+	<title>NodeRpcServer</title>
+
+	<!-- <script src="https://unpkg.com/axios/dist/axios.min.js"></script> -->
+	<!-- <script src="noblappRpcClient.js"></script> -->
+	
+	<script src="https://apis.google.com/js/client:platform.js?onload=start" async defer></script>
+	<script src="noblappXHRClient.js"></script>
+	<script>
+		var serverTarget = [
+			"http://172.30.1.15:8080/noblapp",
+			"/noblapp"
+		];
+		var targetIndex = 0;
+
+		// var serverUrl = "http://172.30.1.15:8080/noblappServer";
+		// var serverUrl = "/noblappServer";
+		// console.log("serverUrl :", serverUrl);
+		// noblapp.setup(serverUrl);
+	
+		function toggleTarget() {
+			if (targetIndex == 0)
+				targetIndex = 1;
+			else
+				targetIndex = 0;
+			var serverUrl = serverTarget[targetIndex];
+			console.log("target server Url :", serverUrl);
+			noblapp.setup(serverUrl);
+		}
+		
+		toggleTarget();
+		
+
+		function testOpenAPI() {
+
+			var module = '/cms/process/trek/addSectors';
+			var param = {
+					tc_id: 9,
+					g_idx: 0,
+					sectors: [
+						{lat: 1111, lng: 2222, type:1},
+						{lat: 3333, lng: 4444, type:1},
+						{lat: 5555, lng: 6666, type:2},
+						{lat: 7777, lng: 8888, type:1},
+						{lat: 9999, lng: 1000, type:1},
+						{lat: 1234, lng: 5678, type:2}
+					]
+			};
+			noblapp.request(module, param, function(data) {
+				console.log(data);
+			});
+		}
+
+		function testModule() {
+			var module = "/cms/process/category/add";
+			var param = {
+					icon_url: "actual icon_url",
+					name_ko: "name in korean",
+					name_en: "name in english",
+					name_cn: "name in chinese",
+					name_jp: "name in japanese",
+					pcid: 0,
+					field_names: {
+						ko: ["fn1 ko", "fn2 ko"],
+						en: ["fn1 en", "fn2 en"],
+						cn: ["fn1 cn", "fn2 cn"],
+						jp: ["fn1 jp", "fn2 jp"]
+					},
+					field_use_yn: [1, 1]
+			};
+			noblapp.request(module, param, function(data) {
+				console.log(data);
+			});
+		}
+		
+		function printCredential() {
+			console.log("uid?", noblapp.getUid());
+			console.log("access_token?", document.cookie);
+		}
+
+		function doTest(module) {
+			var param = {};
+			
+			if (module == "/user/join") {
+				var x = document.getElementById("joinForm");
+				
+				param['id'] = x.elements[0].value;
+				param['password'] = x.elements[1].value;
+				param['name'] = x.elements[2].value;
+
+				// param['id'] = "jun_test_2";
+				// param['password'] = "somepassword";
+				// param['name'] = "jun_test_2";
+				
+				console.log("param['id']:", param['id']);
+				console.log("param['password']:", param['password']);
+				console.log("param['name']:", param['name']);
+				// result = setCookie;
+			}
+			else if (module == "/user/login"/*  || module == "/user/logout" */) {
+				var x = document.getElementById("joinForm");
+
+				param['id'] = x.elements[0].value;
+				param['password'] = x.elements[1].value;
+
+				// param['id'] = "jun_test_2";
+				// param['password'] = "somepassword";
+				
+				// result = setCookie;
+			}
+			else if (module == "/user/info") {
+				// param['uid'] = 71;
+			}
+			else if (module == "/user/spending") {
+				// param['uid'] = 32;
+			}
+			else if (module == "/user/point") {
+				// param['uid'] = 32;
+			}
+			else if (module == "/leisure/trek/near") {
+				param['tc_id'] = 4;
+				param['lat_x'] = '37.54403';					//위도
+				param['long_y'] = '127.23291';
+			}
+			else if (module == "/leisure/trek/course/log") {
+				param['uid'] = 78;
+				// param['tc_id'] = 3;
+			}
+			else if (module == "/leisure/trek/course/list") {
+				param['page'] = 0;
+				param['count'] = 0;
+			}
+			else if (module == "/leisure/trek/total") {
+			}
+			else if (module == "/leisure/trek/cert") {
+			}
+			else if (module == "/leisure/trek/log") {
+			}
+			else if (module == "/shop/list/0") {
+				module = "/shop/list"
+			}
+			else if (module == "/shop/list/1") {
+				module = "/shop/list"
+				param['lat_x'] = 37.476076;
+				param['long_y'] = 126.868034;
+			}
+			
+			// request(module, param, result);
+			noblapp.request(module, param, function(data) {
+				console.log(data);
+				if (data['success']) {
+					var res = JSON.parse(data['response'])
+					console.log("dust_desc?", res['dust_desc']);
+				}
+			});
+		}
+
+		function start() {
+		      gapi.load('auth2', function() {
+		        auth2 = gapi.auth2.init({
+		          client_id: '933241097154-ml4a4if203vu183vscf4ip04lcr1ramm.apps.googleusercontent.com',
+		          // Scopes to request in addition to 'profile' and 'email'
+		          //scope: 'additional_scope'
+		        });
+		      });
+		    }
+		
+	</script>
+</head>
+
+<body>
+<input type="submit" value="switch target" name="" onclick="toggleTarget()">
+<p>
+&nbsp;
+<p>
+
+<input type="submit" value="check credential" name="" onclick="printCredential()">
+<p>
+&nbsp;
+<p>
+
+<input type="submit" value="hit test" name="" onclick="doTest('/')">
+<p>
+<form id="joinForm" onsubmit="return false;">
+	id:<input type="text" name="id"><br>
+	pw:<input type="text" name="pw"><br>
+	name:<input type="text" name="nm"><br>
+	<input type="submit" value="join" name="" onclick="doTest('/user/join')">
+</form>
+<p>
+<input type="submit" value="login" name="" onclick="doTest('/user/login')">
+<p>
+<input type="submit" value="logout" name="" onclick="doTest('/user/logout')">
+<p>
+<input type="submit" value="info" name="" onclick="doTest('/user/info')">
+<p>
+<input type="submit" value="update" name="" onclick="doTest('/user/update')">
+<p>
+<input type="submit" value="speding" name="" onclick="doTest('/user/spending')">
+<p>
+<input type="submit" value="point" name="" onclick="doTest('/user/point')">
+<p>
+<input type="submit" value="trek_near" name="" onclick="doTest('/leisure/trek/near')">
+<p>
+<input type="submit" value="trek_list" name="" onclick="doTest('/leisure/trek/course/list')">
+<p>
+<input type="submit" value="trek_course" name="" onclick="doTest('/leisure/trek/course/log')">
+<p>
+<input type="submit" value="trek_total" name="" onclick="doTest('/leisure/trek/total')">
+<p>
+<input type="submit" value="trek_cert" name="" onclick="doTest('/leisure/trek/cert')">
+<p>
+<input type="submit" value="trek_log" name="" onclick="doTest('/leisure/trek/log')">
+<p>
+<input type="submit" value="store list (no loc)" name="" onclick="doTest('/shop/list/0')">
+<p>
+<input type="submit" value="store list (location)" name="" onclick="doTest('/shop/list/1')">
+<p>
+<input type="submit" value="weather" name="" onclick="doTest('/etc/weather')">
+<p>
+<input type="submit" value="hi" name="" onclick="testOpenAPI()">
+<p>
+
+<form role="form" action="http://openapi.gbis.go.kr/ws/rest/busstationservice/searcharound" method="post">
+	<input type="text" name="icon_url" value="actual icon url" />
+	<input type="text" name="name_ko" value="name ko" />
+	<input type="text" name="name_en" value="name en" />
+	<input type="text" name="name_cn" value="name cn" />
+	<input type="text" name="name_jp" value="name jp" />
+	<input type="text" name="pcid" value="0" />
+	<input type="text" name="field_names_ko" value='["fn1 ko", "fn2 ko"]' />
+	<input type="text" name="field_names_en" value='["fn1 en", "fn2 en"]' />
+	<input type="text" name="field_names_cn" value='["fn1 cn", "fn2 cn"]' />
+	<input type="text" name="field_names_jp" value='["fn1 jp", "fn2 jp"]' />
+	<input type="text" name="field_use_yn" value='[1, 1]' />
+	<input type="submit" value="category add" />
+</form>
+
+<p>
+
+
+<form role="form" action="../cms/process/spot/add" method="post">
+	<input type="text" name="cid" value="15" />
+	<input type="text" name="name_ko" value="spot name ko" />
+	<input type="text" name="name_en" value="spot name en" />
+	<input type="text" name="name_cn" value="spot name cn" />
+	<input type="text" name="name_jp" value="spot name jp" />
+	<input type="submit" value="place add" />
+</form>
+
+</body>
+</html>

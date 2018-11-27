@@ -1,0 +1,1722 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.noblapp.dao.DbMapper">
+	
+	<update id="updateUserSession">
+		update user
+		<set>
+			access_token = #{key}
+		</set>
+		where uid = #{uid}
+	</update>
+	
+
+	<select id="getUserWithId" resultType="com.noblapp.model.vo.UserInfo">
+		select * from user where id=#{id}
+	</select>
+
+	<select id="getUserWithPassword" resultType="com.noblapp.model.vo.UserInfo">
+		select * from user where id=#{id} and password=#{password}
+	</select>
+
+	<select id="getUserWithUid" resultType="com.noblapp.model.vo.UserInfo">
+		select * from user where uid=#{uid}
+	</select>
+
+	<insert id="joinUser">
+		insert into user (id, password, name)
+		values (#{id}, #{password}, #{name})
+	</insert>
+	
+	<update id="updateUserInfo">
+		update user
+		<set>
+			name = #{name},
+			gender = #{gender},
+			birth = #{birth},
+		</set>
+		where uid = #{uid}
+	</update>
+	
+	<select id="getUserSpending" resultType="hashmap">
+		SELECT us.*, s.store_name
+		FROM user_spending us
+		JOIN store s ON us.sid=s.sid
+		WHERE us.uid=#{uid} AND us.status=1
+		ORDER BY commit_time desc
+	</select>
+	
+	
+	
+	
+	<!-- 레져용 -->
+	<select id="getNearSector" resultType="hashmap">
+		SELECT *, 
+               (6371*acos(cos(radians(#{lat}))*cos(radians(lat))*cos(radians(lng)
+               -radians(#{lng}))+sin(radians(#{lat}))*sin(radians(lat)))) distance
+		FROM trekking_sector
+		WHERE
+			status = 1
+			<if test="_parameter.containsKey('tc_id')">and tc_id=#{tc_id}</if>
+			<if test="_parameter.containsKey('tcs_type')">and tcs_type=#{tcs_type}</if>
+		ORDER BY distance
+		LIMIT 2
+	</select>
+
+	<!-- 얘는 체크포인트 갯수만 줘야 함... -->
+	<select id="getTrekCourse" resultType="hashmap">
+		SELECT o.tc_id, o.course_name, o.chk_dist, o.tc_type, o.status, gs.groups, gs.counts
+		FROM trekking_course o
+		LEFT JOIN 
+			(SELECT gg.tc_id, gg.groups, ss.counts from
+				(SELECT g.tc_id, GROUP_CONCAT(g.name order by g.g_idx) groups
+				 FROM trekking_group  g
+				 GROUP BY tc_id) gg
+				LEFT JOIN
+					(SELECT s.tc_id, GROUP_CONCAT(s.cnt order by s.g_idx) counts
+					FROM (SELECT tc_id, g_idx, COUNT(s_idx)  cnt from trekking_sector
+						WHERE tcs_type=2
+						GROUP BY tc_id, g_idx) s GROUP BY s.tc_id) ss ON gg.tc_id=ss.tc_id
+		)  gs ON gs.tc_id=o.tc_id
+		WHERE o.tc_id=#{tc_id}
+	</select>
+	
+	<!-- 트레킹 기록 쓰기. 다만 같은 날을 키로 삼아서 동일한거는 넣지 않는다. -->
+	<insert id="insertUserTrekkingLog">
+		INSERT INTO user_trek_log (uid, tc_id, g_idx, s_idx, tcs_id, issued_date, point)
+		VALUES (#{uid}, #{tc_id}, #{g_idx}, #{s_idx}, #{tcs_id}, #{issued_date}, #{point})
+	</insert>
+	
+	<select id="getIncompleteUserTrekCount" resultType="int">
+		SELECT COUNT(DISTINCT tcs_id) FROM user_trek_log
+		WHERE uid=#{uid} AND cmplt=0
+	</select>
+	
+	<update id="updateTrekCourseCmplt">
+		UPDATE user_trek_log
+		<set>
+			cmplt = 1
+		</set>
+		where uid=#{uid} and tc_id=#{tc_id}
+	</update>
+	
+	<insert id="insertTrekCertCmplt">
+		INSERT INTO user_trekking_cert (uid, tc_id)
+		VALUES (#{uid}, #{tc_id})
+	</insert>
+	
+	<!-- 일반 코스만 조회. -->
+	<select id="getUserTrekkingCertCmplt" resultType="int">
+		SELECT COUNT(DISTINCT utc.tc_id)
+			FROM user_trekking_cert utc
+			JOIN trekking_course tc ON tc.tc_type=1 AND tc.tc_id=utc.tc_id
+			WHERE uid=#{uid}
+	</select>
+
+	<select id="getTrekCourseCount" resultType="int">
+		SELECT COUNT(*) FROM trekking_course
+		<if test="tc_type != 0">WHERE tc_type=#{tc_type}</if>
+	</select>
+
+	<insert id="insertUserTrekkingFame">
+		INSERT INTO user_trekking_fame (uid)
+		VALUES (#{uid})
+	</insert>
+
+	<select id="getUserTrekkingTotalPoints" resultType="int">
+		SELECT SUM(point) FROM user_trek_log
+		WHERE uid=#{uid}
+	</select>
+	
+	<select id="getUserTrekkingCert" resultType="hashmap">
+		SELECT tc.course_name, utc.* 
+		FROM user_trekking_cert utc
+		LEFT JOIN 
+			(SELECT * from trekking_course) tc
+			ON tc.tc_id=utc.tc_id
+		WHERE utc.uid=#{uid}
+	</select>
+	
+	<select id="getUserTrekkingFame" resultType="hashmap">
+		SELECT * FROM user_trekking_fame
+		WHERE uid=#{uid}
+	</select>
+	
+	
+	<select id="getUserTrekkingLog" resultType="hashmap">
+		SELECT utl.*, tcg.name, tcs.lat, tcs.lng
+			FROM user_trek_log utl
+			LEFT JOIN trekking_group tcg ON utl.tc_id=tcg.tc_id AND utl.g_idx=tcg.g_idx
+			JOIN trekking_sector tcs ON utl.tcs_id=tcs.tcs_id
+			WHERE utl.uid=#{uid}
+			<choose>
+				<when test="_parameter.containsKey('tc_id')">
+					AND utl.tc_id=#{tc_id}
+					<!-- GROUP BY utl.tcs_id -->
+					ORDER BY utl.issued_time DESC
+				</when>
+				<otherwise>
+					<!-- GROUP BY utl.tcs_id -->
+					ORDER BY utl.tc_id ASC, utl.issued_time DESC
+				</otherwise>
+			</choose>
+	</select>
+	
+	<select id="getUserEventTrekkingLog" resultType="hashmap">
+		SELECT *
+			FROM (SELECT count(*) total
+				FROM trekking_sector ts
+				JOIN trekking_course tc ON tc.tc_id=ts.tc_id AND tc.tc_type=2) tt
+			CROSS JOIN (SELECT count(*) today
+				FROM user_trek_log etl
+				JOIN trekking_course tc ON tc.tc_id=etl.tc_id AND tc.tc_type=2
+				WHERE etl.issued_date=CURDATE() AND uid=#{uid}) ut
+	</select>
+
+	<!-- 쇼핑 서비스용 -->
+	<select id="getPointStoreList" resultType="com.noblapp.model.vo.ShortStoreInfo">
+		select sid, store_name, phone
+		<if test="lat_x != 0.0 and long_y != 0.0">
+		, (6371*acos(cos(radians(#{lat_x}))*cos(radians(lat_x))*cos(radians(long_y)
+        - radians(#{long_y}))+sin(radians(#{lat_x}))*sin(radians(lat_x))))
+		as distance
+		</if>
+		from store
+		where status=1
+		<if test="lat_x != 0.0 and long_y != 0.0">
+		order by distance
+		</if>
+	</select>
+	
+	<select id="getStoreInfo" resultType="com.noblapp.model.vo.StoreInfo">
+		select * from store where sid=#{sid}
+	</select>
+
+	<select id="getSpendingList" resultType="com.noblapp.model.vo.SpendingInfo">
+		select * from user_spending
+		where sid=#{sid} and status = 1 order by commit_time desc
+	</select>
+
+	<update id="updateStoreInfo">
+		update store
+		<set>
+			<if test="store_name != null">store_name = #{store_name},</if>
+			<if test="address != null">address = #{address},</if>
+			<if test="phone != null">phone = #{phone},</if>
+			<if test="business_number != null">business_number = #{business_number},</if>
+			<if test="lat_x != 0.0">lat_x = #{lat_x},</if>
+			<if test="long_y != 0.0">long_y = #{long_y},</if>
+		</set>
+		where masterUid=#{uid} and sid=#{sid}
+	</update>
+	
+	
+	
+	
+	<insert id="insertUserSpending">
+		insert into user_spending (sid, uid, point, issued_time)
+		values (#{sid}, #{uid}, #{point}, #{issued_time})
+	</insert>
+
+	<update id="updateUserPoint">
+		update user
+		<set>
+			point = point + #{point}
+		</set>
+		where uid=#{uid}
+	</update>
+	
+	<select id="getSpendingReqList" resultType="hashmap">
+		SELECT us.*, u.id, u.name, s.store_name
+		FROM user_spending us
+		INNER JOIN store s ON us.sid=s.sid
+		INNER JOIN user u ON us.uid=u.uid
+		WHERE 
+		<choose>
+			<when test="sid > 0">
+				us.sid=#{sid}
+			</when>
+			<otherwise>
+				us.uid=#{uid}
+			</otherwise>
+		</choose>
+		AND us.status=0
+		ORDER BY commit_time DESC
+	</select>
+	
+	<select id="getSpendingReq" resultType="com.noblapp.model.vo.SpendingInfo">
+		select uid, sid, point from user_spending
+		where us_id=#{us_id}
+	</select>
+
+	<update id="updateStorePoint">
+		update store
+		<set>
+			point = point + #{point}
+		</set>
+		where sid=#{sid}
+	</update>
+	
+	<update id="updateUserSpendingPoint">
+		update user_spending
+		<set>
+			status = #{status},
+			commit_time = #{commit_time}
+		</set>
+		where us_id=#{us_id}
+	</update>
+	
+
+
+	<!-- 지도 서비스용 -->
+	<!-- 검색... -->
+	<select id="searchPlaces" resultType="hashmap">
+		SELECT p.pid, p.lat, p.lng, p.map_type, p.map_res_url, p.display_zoom,
+		<choose>
+			<when test="lang == 'en'">
+				pn.en name
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn name
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp name
+			</when>
+			<otherwise>
+				pn.ko name
+			</otherwise>
+		</choose>
+		from
+		pl p
+		INNER JOIN pl_nm pn ON p.pid=pn.pid
+		INNER JOIN pl_tx pt ON p.pid=pt.pid
+		INNER JOIN pl_ad pa ON p.pid=pa.pid
+		INNER JOIN pl_ccv pccv ON p.pid=pccv.pid
+		INNER JOIN pl_cf pcf ON p.pid=pcf.pid
+		INNER JOIN pl_cv pcv ON p.pid=pcv.pid
+		INNER JOIN pc_cf pccf ON p.cid=pccf.cid
+		INNER JOIN pc pc ON p.cid=pc.cid
+		
+		WHERE p.status=1 AND
+			(
+		<choose>
+			<when test="lang == 'en'">
+				pn.en LIKE #{search_value}
+				OR pt.en LIKE #{search_value}
+				OR pccv.en LIKE #{search_value}
+				OR pcv.en LIKE #{search_value}
+				OR pa.en LIKE #{search_value}
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn LIKE #{search_value}
+				OR pt.cn LIKE #{search_value}
+				OR pccv.cn LIKE #{search_value}
+				OR pcv.cn LIKE #{search_value}
+				OR pa.cn LIKE #{search_value}
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp LIKE #{search_value}
+				OR pt.jp LIKE #{search_value}
+				OR pccv.jp LIKE #{search_value}
+				OR pcv.jp LIKE #{search_value}
+				OR pa.jp LIKE #{search_value}
+			</when>
+			<otherwise>
+				pn.ko LIKE #{search_value}
+				OR pt.ko LIKE #{search_value}
+				OR pccv.ko LIKE #{search_value}
+				OR pcv.ko LIKE #{search_value}
+				OR pa.ko LIKE #{search_value}
+			</otherwise>
+		</choose>
+			 )
+	</select>
+
+	
+	<!-- 장소 All ... -->
+	<select id="getAllPlaces" resultType="hashmap">
+		SELECT p.pid, p.lat, p.lng, p.map_type, p.map_res_url, p.display_zoom, 
+		<choose>
+			<when test="lang == 'en'">
+				pn.en name,
+				pcf.en cf,
+				pcv.en cv
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn name,
+				pcf.cn cf,
+				pcv.cn cv				
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp name,
+				pcf.jp cf,
+				pcv.jp cv				
+			</when>
+			<otherwise>
+				pn.ko name,
+				pcf.ko cf,
+				pcv.ko cv				
+			</otherwise>
+		</choose>
+		from
+		pl p
+		INNER JOIN pl_nm pn ON p.pid=pn.pid
+		INNER JOIN pl_cf pcf ON p.pid=pcf.pid
+		INNER JOIN pl_cv pcv ON p.pid=pcv.pid
+		WHERE p.status=1  
+	</select>
+	
+
+	<!-- 기타 서비스용 -->
+	<select id="getWeather" resultType="hashmap">
+		select * from weather
+	</select>
+			
+	<insert id="insertWeather">
+		insert into weather (temp, `desc`, dust_desc, dust_value, check_time) 
+		select #{temp}, #{desc}, #{dust_desc}, #{dust_value}, now()
+	</insert>
+	
+	<delete id="deleteWeather">	
+		delete from weather
+	</delete>
+
+	<select id="getStringTable" resultType="com.noblapp.model.vo.StringInfo">
+		select st_id, cname, 
+		<choose>
+			<when test="lang == 'en'">
+				str_eng as str
+			</when>
+			<when test="lang == 'cn'">
+				str_chn as str
+			</when>
+			<when test="lang == 'jp'">
+				str_jpn as str
+			</when>
+			<otherwise>
+				str_kor as str
+			</otherwise>
+		</choose>
+		from init_string_define
+	</select>
+	
+	<!--  -->
+	<select id="getTrekkingStats" resultType="hashmap">
+		SELECT * FROM (
+			SELECT COUNT(uid) today_user, IFNULL(SUM(count), 0) today_hits FROM (
+				SELECT uid, COUNT(*) count 
+				FROM user_trek_log 
+				WHERE issued_date=CURDATE()
+				GROUP BY uid) a
+			) today
+			JOIN (
+				SELECT COUNT(uid) total_user, IFNULL(SUM(count), 0) total_hits FROM (
+					SELECT uid, COUNT(*) count 
+					FROM user_trek_log 
+					GROUP BY uid) b
+				) total
+	</select>
+	
+	<insert id="insertVisitorLog">
+		INSERT INTO visitor_log (date, month, year, remote_addr, servlet)
+		VALUES (#{date}, #{month}, #{year}, #{remote_addr}, #{servlet})
+	</insert>
+
+	<select id="getVisitorsCountBy" resultType="hashmap">
+		SELECT 
+			<choose>
+				<when test="type == 'monthly'">		<!-- monthly -->
+					month d, SUM(counts) counts
+				</when>
+				<when test="type == 'yearly'">		<!-- yearly -->
+					year d, SUM(counts) counts
+				</when>
+				<otherwise>		<!-- daily -->
+					DATE_FORMAT(date, '%Y-%m-%d') d, counts
+				</otherwise>
+			</choose>
+			
+			FROM visitor_log_archive
+			GROUP BY 
+			<choose>
+				<when test="type == 'monthly'">		<!-- monthly -->
+					month
+				</when>
+				<when test="type == 'yearly'">		<!-- yearly -->
+					year
+				</when>
+				<otherwise>		<!-- daily -->
+					date
+				</otherwise>
+			</choose>
+			LIMIT #{max}
+	</select>
+	
+	<!-- 오늘 방문자 수... -->
+	<select id="getVisitorTodayCount" resultType="int">
+		SELECT count(*) FROM (
+			SELECT * FROM visitor_log
+				WHERE date=CURDATE()
+				GROUP BY remote_addr
+			) a
+	</select>
+
+	<!-- 오늘꺼하고 기존 기록에 있는거 합치기. 정확히 따지면 일일 누적 방문자 수... -->
+	<select id="getVisitorTotalCount" resultType="int">
+			SELECT SUM(count) 
+		FROM (
+			(
+				SELECT SUM(counts) count FROM visitor_log_archive
+			) UNION (
+				SELECT count(*) FROM (
+					SELECT * FROM visitor_log
+						WHERE date=CURDATE()
+						GROUP BY remote_addr
+					) a
+			)
+		) b
+	</select>
+	
+		
+	<!-- <select id="getServiceConfig" resultType="com.noblapp.model.vo.ServiceConfigVo"> -->
+	<select id="getServiceConfig" resultType="hashmap">
+		select * from service_config
+	</select>
+
+	<select id="getServiceConfigNonSecret" resultType="hashmap">
+		select * from service_config
+		where name not like '%Secret'
+	</select>
+    <insert id="insertServiceConfig">
+        insert into service_config
+        <set>
+            <if test="desc != null">description=#{desc},</if>
+            name=#{name},
+            the_value=#{value}
+        </set>
+    </insert>
+	<update id="updateServiceConfig">
+		update service_config
+		<set>
+			<if test="desc != null">description=#{desc},</if>
+			the_value=#{value}
+		</set>
+		where id=#{id}
+	</update>
+	<delete id="deleteServiceConfig">
+        delete from service_config
+        where id=#{id}
+    </delete>
+	
+	
+	
+	
+	
+	<!-- CMS용 쿼리들... -->
+	<select id="getAdminUser" resultType="hashmap">
+		select uid, id, name, access_token from user
+		where type=9
+	</select>
+	
+	<select id="getAdministrators" resultType="hashmap">
+		select uid, id, name, access_token from user
+		where type>=8
+	</select>
+
+	<insert id="addAdmin">
+		insert into user (id, password, name, type)
+		values (#{id}, #{password}, #{name}, 9)
+	</insert>
+
+	<select id="getManagementUser" resultType="com.noblapp.model.vo.ManagementInfo">
+		select * from nb_global.map_admins
+		where id=#{id}
+	</select>
+
+	<update id="updateManagerPassword">
+		update nb_global.map_admins
+		<set>
+			password=#{password}
+		</set>
+		where id=#{id}
+	</update>
+
+
+
+	<!-- Category -->
+	<select id="getPlaceCategoryCount" resultType="int">
+		SELECT COUNT(*) from pc
+		<if test="pcid != null">WHERE pcid=#{pcid}</if>
+	</select>
+	
+	<!-- 이 쿼리 안에 주석은 없으면 left join 때문에 트래킹 코스가 같은 카테고리에 2개 이상 있으면 개수만큼 중복으로 나타남... -->
+	<select id="getPlaceCategories" resultType="hashmap">
+		SELECT pc.*, <!-- tc.tc_id, -->
+		<choose>
+			<when test="lang == 'en'">
+				pcn.en title, pcf.en ccf
+			</when>
+			<when test="lang == 'cn'">
+				pcn.cn title, pcf.cn ccf
+			</when>
+			<when test="lang == 'jp'">
+				pcn.jp title, pcf.jp ccf
+			</when>
+			<when test="lang == 'ko'">
+				pcn.ko title, pcf.ko ccf
+			</when>
+			<otherwise>
+				pcn.ko title,
+				pcn.en title_en,
+				pcn.cn title_cn,
+				pcn.jp title_jp,
+				pcf.ko ccf,
+				pcf.en ccf_en,
+				pcf.cn ccf_cn,
+				pcf.jp ccf_jp
+			</otherwise>
+		</choose>
+		from
+		pc pc 
+		INNER JOIN pc_nm pcn ON pc.cid=pcn.cid
+		INNER JOIN pc_cf pcf ON pc.cid=pcf.cid
+		<!-- LEFT JOIN trekking_course tc ON pc.cid=tc.cid -->
+		ORDER BY pc.sort, pc.cid asc
+		<if test="count > 0">limit #{count} offset #{from}</if>
+	</select>
+		
+	<select id="getRootCategories" resultType="hashmap">
+		SELECT pc.*, pcn.ko title
+		from
+		pc pc 
+		INNER JOIN pc_nm pcn ON pc.cid=pcn.cid
+		WHERE pc.pcid=0
+		ORDER BY pc.cid asc
+	</select>
+	
+	<insert id="insertPlaceCategory" useGeneratedKeys="true" keyProperty="cid" keyColumn="cid">
+		insert into pc (icon_url, pcid, ccu, link, sort)
+		values (#{icon_url}, #{pcid}, #{ccu}, #{link}, #{sort})
+	</insert>
+	
+	<update id="updatePlaceCategory">
+		update pc
+		<set>
+			<if test="_parameter.containsKey('pcid')">pcid = #{pcid},</if>
+			<if test="_parameter.containsKey('icon_url')">icon_url = #{icon_url},</if>
+			<if test="_parameter.containsKey('ccu')">ccu = #{ccu},</if>
+			<if test="_parameter.containsKey('sort')">sort = #{sort},</if>
+			<if test="_parameter.containsKey('link')">link = #{link},</if>
+			<if test="_parameter.containsKey('help_file')">help_file = #{help_file},</if>
+			<if test="_parameter.containsKey('status')">status = #{status},</if>
+		</set>
+		where cid = #{cid}
+	</update>
+		
+	<insert id="insertCategoryLocalizedStrings">
+		insert into 
+		<choose>
+			<when test="table_name == 'place_category_names'"> pc_nm </when>
+			<when test="table_name == 'place_category_fields'"> pc_cf </when>
+		</choose>
+		(cid, ko, en, cn, jp)
+		values (#{cid}, #{ko}, #{en}, #{cn}, #{jp})
+	</insert>
+
+	<update id="updateCategoryLocalizedStrings">
+		update
+		<choose>
+			<when test="table_name == 'place_category_names'"> pc_nm </when>
+			<when test="table_name == 'place_category_fields'"> pc_cf </when>
+		</choose>
+		<set>
+			<if test="_parameter.containsKey('ko')">ko = #{ko},</if>
+			<if test="_parameter.containsKey('en')">en = #{en},</if>
+			<if test="_parameter.containsKey('cn')">cn = #{cn},</if>
+			<if test="_parameter.containsKey('jp')">jp = #{jp},</if>
+		</set>
+		where cid = #{cid}
+	</update>
+		
+	<delete id="deletePlaceCategory">
+		DELETE pc, pcn, pcf
+		from
+		pc as pc 
+		INNER JOIN pc_nm as pcn ON pc.cid=pcn.cid
+		INNER JOIN pc_cf as pcf ON pc.cid=pcf.cid
+		WHERE pc.cid=#{id}
+	</delete>
+	
+		
+		
+	<!-- Places -->
+	<select id="getPlaceCount" resultType="int">
+		SELECT COUNT(*) from pl
+		<if test="cid > 0">WHERE cid=#{cid}</if>
+	</select>
+
+	<select id="getPlaces" resultType="hashmap">
+		SELECT p.*,
+		<choose>
+			<when test="lang == 'en'">
+				pn.en as name, pt.en as text, pa.en as address,
+				<!-- pccf.en as ccf, -->
+				pccv.en as ccv, pcf.en as cf, pcv.en as cv
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn as name, pt.cn as text, pa.cn as address,
+				<!-- pccf.cn as ccf, -->
+				pccv.cn as ccv, pcf.cn as cf, pcv.cn as cv
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp as name, pt.jp as text, pa.jp as address,
+				<!-- pccf.jp as ccf, -->
+				pccv.jp as ccv, pcf.jp as cf, pcv.jp as cv
+			</when>
+			<when test="lang == 'ko'">
+				pn.ko as name, pt.ko as text, pa.ko as address,
+				<!-- pccf.ko as ccf, -->
+				pccv.ko as ccv, pcf.ko as cf, pcv.ko as cv
+			</when>
+			<otherwise>
+				pn.ko as name, 
+				pn.en as name_en, 
+				pn.cn as name_cn, 
+				pn.jp as name_jp, 
+
+				pt.ko as text, 
+				pt.en as text_en, 
+				pt.cn as text_cn, 
+				pt.jp as text_jp, 
+
+				pa.ko as address, 
+				pa.en as address_en, 
+				pa.cn as address_cn, 
+				pa.jp as address_jp, 
+<!-- 
+				pccf.ko as ccf, 
+				pccf.en as ccf_en, 
+				pccf.cn as ccf_cn, 
+				pccf.jp as ccf_jp, 
+ -->
+
+				pccv.ko as ccv, 
+				pccv.en as ccv_en, 
+				pccv.cn as ccv_cn, 
+				pccv.jp as ccv_jp, 
+
+				pcf.ko as cf, 
+				pcf.en as cf_en, 
+				pcf.cn as cf_cn, 
+				pcf.jp as cf_jp, 
+
+				pcv.ko as cv,
+				pcv.en as cv_en,
+				pcv.cn as cv_cn,
+				pcv.jp as cv_jp
+			</otherwise>
+		</choose>
+		from
+		pl as p
+		INNER JOIN pl_nm as pn ON p.pid=pn.pid
+		INNER JOIN pl_tx as pt ON p.pid=pt.pid
+		INNER JOIN pl_ad as pa ON p.pid=pa.pid
+		INNER JOIN pl_ccv as pccv ON p.pid=pccv.pid
+		INNER JOIN pl_cf as pcf ON p.pid=pcf.pid
+		INNER JOIN pl_cv as pcv ON p.pid=pcv.pid
+		<!-- INNER JOIN pc_cf as pccf ON p.cid=pccf.cid -->
+		
+		<if test="cid > 0">WHERE p.cid=#{cid} and p.status=1</if>
+		<if test="pid > 0">WHERE p.pid=#{pid} and p.status=1</if>
+		ORDER BY p.pid asc
+		<if test="count > 0">
+		limit #{count} offset #{from}
+		</if>
+	</select>
+	
+	<insert id="insertPlace" useGeneratedKeys="true" keyProperty="pid" keyColumn="pid">
+		insert into pl (cid, images, videos, others, phone, lat, lng, map_type, map_res_url, display_zoom)
+		values (#{cid}, #{images}, #{videos}, #{others}, #{phone}, #{lat}, #{lng}, #{map_type}, #{map_res_url}, #{display_zoom})
+	</insert>
+		
+	<update id="updatePlace">
+		update pl
+		<set>
+			<if test="_parameter.containsKey('cid')">cid = #{cid},</if>			
+			<if test="_parameter.containsKey('images')">images = #{images},</if>
+			<if test="_parameter.containsKey('videos')">videos = #{videos},</if>
+			<if test="_parameter.containsKey('others')">others = #{others},</if>
+			<if test="_parameter.containsKey('phone')">phone = #{phone},</if>
+			<if test="_parameter.containsKey('lat')">lat = #{lat},</if>
+			<if test="_parameter.containsKey('lng')">lng = #{lng},</if>
+			<if test="_parameter.containsKey('map_type')">map_type = #{map_type},</if>
+			<if test="_parameter.containsKey('map_res_url')">map_res_url = #{map_res_url},</if>
+			<if test="_parameter.containsKey('display_zoom')">display_zoom = #{display_zoom},</if>
+			<if test="_parameter.containsKey('status')">status = #{status},</if>
+		</set>
+		where pid = #{pid}
+	</update>
+	
+	<insert id="insertPlacesLocalizedStrings">
+		insert into 
+		<choose>
+			<when test="table_name == 'places_names'"> pl_nm </when>
+			<when test="table_name == 'places_texts'"> pl_tx </when>
+			<when test="table_name == 'places_addresses'"> pl_ad </when>
+			<when test="table_name == 'places_c_custom_values'"> pl_ccv </when>
+			<when test="table_name == 'places_custom_fields'"> pl_cf </when>
+			<when test="table_name == 'places_custom_values'"> pl_cv </when>
+		</choose>
+		(pid, ko, en, cn, jp)
+		values (#{pid}, #{ko}, #{en}, #{cn}, #{jp})
+	</insert>
+
+	<update id="updatePlacesLocalizedStrings">
+		update
+		<choose>
+			<when test="table_name == 'places_names'"> pl_nm </when>
+			<when test="table_name == 'places_texts'"> pl_tx </when>
+			<when test="table_name == 'places_addresses'"> pl_ad </when>
+			<when test="table_name == 'places_c_custom_values'"> pl_ccv </when>
+			<when test="table_name == 'places_custom_fields'"> pl_cf </when>
+			<when test="table_name == 'places_custom_values'"> pl_cv </when>
+		</choose>
+		<set>
+			<!-- <if test="_parameter.containsKey('ko')">ko = #{ko},</if> -->
+			<if test="_parameter.containsKey('ko')">ko = #{ko},</if>
+			<if test="_parameter.containsKey('en')">en = #{en},</if>
+			<if test="_parameter.containsKey('cn')">cn = #{cn},</if>
+			<if test="_parameter.containsKey('jp')">jp = #{jp},</if>
+		</set>
+		where pid = #{pid}
+	</update>
+
+	<delete id="deletePlace">
+		DELETE p, pn, pt, pa, pccv, pcf, pcv
+		from
+		pl as p
+		INNER JOIN pl_nm as pn ON p.pid=pn.pid
+		INNER JOIN pl_tx as pt ON p.pid=pt.pid
+		INNER JOIN pl_ad as pa ON p.pid=pa.pid
+		INNER JOIN pl_ccv as pccv ON p.pid=pccv.pid
+		INNER JOIN pl_cf as pcf ON p.pid=pcf.pid
+		INNER JOIN pl_cv as pcv ON p.pid=pcv.pid
+		WHERE p.pid=#{id}
+	</delete>
+	
+	<!-- 지도용 장소 가져오기.. map type이 0이 아닌 경우... 
+		spot에서도 가져와야 해...
+	-->
+	<!-- 
+	<select id="getMappedPlaces" resultType="hashmap">
+		SELECT * FROM (
+		(SELECT p.pid, p.cid, p.lat, p.lng, p.map_type, p.map_res_url, p.status,
+			<choose>
+				<when test="lang == 'en'">
+					pn.en
+				</when>
+				<when test="lang == 'cn'">
+					pn.cn
+				</when>
+				<when test="lang == 'jp'">
+					pn.jp
+				</when>
+				<otherwise>
+					pn.ko
+				</otherwise>
+			</choose>
+			name
+			FROM pl p
+			INNER JOIN pl_nm pn ON p.pid=pn.pid
+			WHERE p.map_type!=0 AND p.status=1)
+		UNION
+		(SELECT p.*,
+			<choose>
+				<when test="lang == 'en'">
+					pn.en
+				</when>
+				<when test="lang == 'cn'">
+					pn.cn
+				</when>
+				<when test="lang == 'jp'">
+					pn.jp
+				</when>
+				<otherwise>
+					pn.ko
+				</otherwise>
+			</choose>
+			name
+			FROM spot p
+			INNER JOIN spot_nm pn ON p.pid=pn.pid
+			WHERE p.status=1)
+		) a
+		<if test="cid != 0">WHERE a.cid=${cid}</if>
+	</select>
+	 -->
+	 <select id="getMappedPlaces" resultType="hashmap">
+		 SELECT p.pid, p.cid, p.images, p.lat, p.lng, p.map_type, p.map_res_url, p.status, p.display_zoom,
+			<choose>
+				<when test="lang == 'en'">
+					pn.en as name
+					, pt.en as text
+					, pa.en as address
+				</when>
+				<when test="lang == 'cn'">
+					pn.cn as name
+					 , pt.cn as text
+					 , pa.cn as address
+				</when>
+				<when test="lang == 'jp'">
+					pn.jp as name
+					 , pt.jp as text
+					 , pa.jp as address
+				</when>
+				<otherwise>
+					pn.ko as name
+					 , pt.ko as text
+					 , pa.ko as address
+				</otherwise>
+			</choose>
+			from
+			pl as p
+			INNER JOIN pl_nm as pn ON p.pid=pn.pid
+			INNER JOIN pl_tx as pt ON p.pid=pt.pid
+			INNER JOIN pl_ad as pa ON p.pid=pa.pid
+			WHERE 
+			<if test="cid > 0">
+			p.cid=#{cid} and 
+			</if>
+			p.status=1
+			ORDER BY p.pid asc			
+		 
+	 </select>
+
+	<!-- 
+	<select id="getMappedPlaces" resultType="hashmap">
+		SELECT p.*,
+		<choose>
+			<when test="lang == 'en'">
+				pn.en as name, pt.en as text, pa.en as address
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn as name, pt.cn as text, pa.cn as address
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp as name, pt.jp as text, pa.jp as address
+			</when>
+			<otherwise>
+				pn.ko as name, pt.ko as text, pa.ko as address
+			</otherwise>
+		</choose>
+		from
+		pl as p
+		INNER JOIN pl_nm as pn ON p.pid=pn.pid
+		INNER JOIN pl_tx as pt ON p.pid=pt.pid
+		INNER JOIN pl_ad as pa ON p.pid=pa.pid
+		WHERE p.map_type!=0 and p.status=1
+		<if test="cid != 0">and p.cid=${cid}</if>
+	</select>
+	 -->
+	
+	<!-- client가 받을 데이터들... 필요하면 여기에 추가해주자... -->
+	<select id="getPlacesList" resultType="hashmap">
+		SELECT p.pid, p.cid, p.images, p.lat, p.lng,
+		<choose>
+			<when test="lang == 'en'">
+				pn.en as name, pt.en as text
+				<!-- , pa.en as address, -->
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn as name, pt.cn as text
+				<!-- , pa.cn as address, -->
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp as name, pt.jp as text
+				<!-- , pa.jp as address, -->
+			</when>
+			<otherwise>
+				pn.ko as name, pt.ko as text
+				, pa.ko as address
+			</otherwise>
+		</choose>
+		from
+		pl as p
+		INNER JOIN pl_nm as pn ON p.pid=pn.pid
+		INNER JOIN pl_tx as pt ON p.pid=pt.pid		
+		INNER JOIN pl_ad as pa ON p.pid=pa.pid
+		WHERE 
+		<if test="cid > 0">
+		p.cid=#{cid} and 
+		</if>
+		p.status=1
+		ORDER BY p.pid asc
+		<if test="count > 0">
+		limit #{count} offset #{from}
+		</if>
+	</select>
+	
+	<select id="getPlacesDetail" resultType="hashmap">
+		SELECT p.*, tl.cnt hits,
+		<choose>
+			<when test="lang == 'en'">
+				pn.en as name, pt.en as text, pa.en as address,
+				pc.ccu as ccu, pccf.en as ccf, pccv.en as ccv,
+				pcf.en as cf, pcv.en as cv
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn as name, pt.cn as text, pa.cn as address,
+				pc.ccu as ccu, pccf.cn as ccf, pccv.cn as ccv, 
+				pcf.cn as cf, pcv.cn as cv
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp as name, pt.jp as text, pa.jp as address,
+				pc.ccu as ccu, pccf.jp as ccf, pccv.jp as ccv,
+				pcf.jp as cf, pcv.jp as cv
+			</when>
+			<otherwise>
+				pn.ko as name, pt.ko as text, pa.ko as address,
+				pc.ccu as ccu, pccf.ko as ccf, pccv.ko as ccv,
+				pcf.ko as cf, pcv.ko as cv
+			</otherwise>
+		</choose>
+		from
+		pl as p
+		INNER JOIN pl_nm as pn ON p.pid=pn.pid
+		INNER JOIN pl_tx as pt ON p.pid=pt.pid
+		INNER JOIN pl_ad as pa ON p.pid=pa.pid
+		INNER JOIN pl_ccv as pccv ON p.pid=pccv.pid
+		INNER JOIN pl_cf as pcf ON p.pid=pcf.pid
+		INNER JOIN pl_cv as pcv ON p.pid=pcv.pid
+		INNER JOIN pc_cf as pccf ON p.cid=pccf.cid
+		INNER JOIN pc as pc ON p.cid=pc.cid
+		LEFT JOIN (select * from touch_log where table_type = 'P') tl on p.pid = tl.pid
+
+		WHERE p.pid=#{pid}
+	</select>
+		
+	<select id="getSpotDetail" resultType="hashmap">
+		SELECT sp.*, tl.cnt hits,
+		<choose>
+			<when test="lang == 'en'">
+				sn.en name
+			</when>
+			<when test="lang == 'cn'">
+				sn.cn name
+			</when>
+			<when test="lang == 'jp'">
+				sn.jp name
+			</when>
+			<when test="lang == 'ko'">
+				sn.ko name
+			</when>
+			<otherwise>
+				sn.ko name
+			</otherwise>
+		</choose>
+		FROM
+		spot sp
+		JOIN spot_nm sn ON sp.pid=sn.pid
+		LEFT JOIN (select * from touch_log where table_type = 'S') tl ON sp.pid = tl.pid
+		WHERE sp.pid=#{pid}
+	</select>
+		
+		
+	<select id="getPictogramCount" resultType="int">
+		SELECT COUNT(*) from pictograms
+	</select>
+
+	<select id="getPictograms" resultType="hashmap">
+		SELECT * from pictograms
+		ORDER BY title asc 
+		<if test="count > 0">
+		limit #{count} offset #{from}
+		</if>
+	</select>
+	
+	<insert id="insertPictogram" useGeneratedKeys="true" keyProperty="pid" keyColumn="pid">
+		insert into pictograms (title, icon_url)
+		values (#{title}, #{icon_url})
+	</insert>
+	
+	<update id="updatePictogram">
+		update pictograms
+		<set>
+			<if test="_parameter.containsKey('title')">title = #{title},</if>
+			<if test="_parameter.containsKey('icon_url')">icon_url = #{icon_url},</if>
+		</set>
+		where pid = #{pid}
+	</update>
+	
+	<delete id="deletePictogram">
+		DELETE from pictograms
+		WHERE pid=#{id}
+	</delete>
+	
+	
+	
+	
+	
+	
+	<select id="getUserCount" resultType="int">
+		SELECT COUNT(*) from user
+	</select>
+
+	<select id="getUsers" resultType="hashmap">
+		SELECT uid, id, type, name, mobile, birth, gender, point, status
+		from user
+		<if test="count > 0">
+		limit #{count} offset #{from}
+		</if>
+	</select>
+	
+	<insert id="insertUser" useGeneratedKeys="true" keyProperty="uid" keyColumn="uid">
+		insert into user (id, password, type, name, mobile, birth, gender)
+		values (#{id}, #{password}, #{type}, #{name}, #{mobile}, #{birth}, #{gender})
+	</insert>
+	
+	<update id="updateUser">
+		update user
+		<set>
+			<if test="_parameter.containsKey('type')">type = #{type},</if>
+			<if test="_parameter.containsKey('password')">password = #{password},</if>
+			<if test="_parameter.containsKey('name')">name = #{name},</if>
+			<if test="_parameter.containsKey('mobile')">mobile = #{mobile},</if>
+			<if test="_parameter.containsKey('birth')">birth = #{birth},</if>
+			<if test="_parameter.containsKey('gender')">gender = #{gender},</if>
+			<if test="_parameter.containsKey('status')">status = #{status},</if>
+		</set>
+		where uid = #{uid}
+	</update>
+	
+	<delete id="deleteUser">
+		DELETE from user
+		WHERE uid=#{id}
+	</delete>
+	
+	
+	
+		
+	
+	
+	<select id="getTrekCourses" resultType="hashmap">
+		SELECT o.tc_id, o.course_name, o.chk_dist, o.tc_type, o.cid, o.status, gs.groups, gs.counts, gs.pids
+		FROM trekking_course o
+		LEFT JOIN 
+			(SELECT gg.tc_id, gg.groups, gg.pids, ss.counts from
+				(SELECT g.tc_id, GROUP_CONCAT(g.name order by g.g_idx) groups, GROUP_CONCAT(g.pid order by g.g_idx) pids
+				 FROM trekking_group  g
+				 GROUP BY tc_id) gg
+				LEFT JOIN
+					(SELECT s.tc_id, GROUP_CONCAT(s.cnt order by s.g_idx) counts
+					FROM (SELECT tc_id, g_idx, COUNT(s_idx)  cnt from trekking_sector
+						GROUP BY tc_id, g_idx) s GROUP BY s.tc_id) ss ON gg.tc_id=ss.tc_id
+		)  gs ON gs.tc_id=o.tc_id
+		<if test="status == 1">
+			where status= #{status}
+		</if>
+		order by course_name
+		<if test="count > 0">
+		limit #{count} offset #{from}
+		</if>
+	</select>
+	
+	<insert id="insertTrekCourse" useGeneratedKeys="true" keyProperty="tc_id" keyColumn="tc_id">
+		insert into trekking_course (course_name, color, chk_dist, tc_type, cid)
+		values (#{course_name}, #{color}, #{chk_dist}, #{tc_type}, #{cid})
+	</insert>
+	
+	<update id="updateTrekCourse">
+		update trekking_course
+		<set>
+			<if test="_parameter.containsKey('course_name')">course_name = #{course_name},</if>
+			<if test="_parameter.containsKey('color')">color = #{color},</if>
+			<if test="_parameter.containsKey('chk_dist')">chk_dist = #{chk_dist},</if>
+			<if test="_parameter.containsKey('tc_type')">tc_type = #{tc_type},</if>
+			<if test="_parameter.containsKey('cid')">cid = #{cid},</if>
+			<if test="_parameter.containsKey('status')">status = #{status},</if>
+		</set>
+		where tc_id = #{tc_id}
+	</update>
+
+	<select id="getCourseSectors" resultType="hashmap">
+		SELECT * from trekking_sector
+		<if test="_parameter.containsKey('tc_id')">
+			WHERE tc_id=#{tc_id}
+			<if test="_parameter.containsKey('g_idx')">
+				and g_idx=#{g_idx}
+			</if>
+		</if>
+		ORDER BY tc_id, g_idx, s_idx
+	</select>
+
+	<!-- 관련된 데이터들 다 지우는거... -->
+	<delete id="deleteTrekCourse">
+		DELETE tc, tg, ts
+			FROM trekking_course tc
+			LEFT JOIN trekking_group tg ON tc.tc_id=tg.tc_id
+			LEFT JOIN trekking_sector ts ON tc.tc_id=ts.tc_id
+			WHERE tc.tc_id=#{tc_id}
+	</delete>
+	
+	<delete id="deleteCategoryRelatedTrekCourse">
+		DELETE tc, tg, ts
+			FROM trekking_course tc
+			LEFT JOIN trekking_group tg ON tc.tc_id=tg.tc_id
+			LEFT JOIN trekking_sector ts ON tc.tc_id=ts.tc_id
+			WHERE tc.cid=#{cid}
+	</delete>
+	
+	
+	<insert id="insertTrekGroup">
+		insert into trekking_group (tc_id, g_idx, name, pid)
+		values (#{tc_id}, #{g_idx}, #{name}, #{pid})
+		ON DUPLICATE KEY UPDATE name=#{name}, pid=#{pid}
+	</insert>
+	
+	<delete id="removeTrekGroup">
+		DELETE from trekking_group
+		WHERE tc_id=#{tc_id} and g_idx >= #{g_idx}
+	</delete>
+
+	
+	
+	
+	<select id="getGroupIndexOfSectors" resultType="hashmap">
+		SELECT tc_id, g_idx from trekking_sector
+		WHERE tc_id=#{tc_id}
+		GROUP BY g_idx
+	</select>
+
+	<select id="getSectors" resultType="hashmap">
+		SELECT * from trekking_sector
+		WHERE tc_id=#{tc_id} and g_idx=#{g_idx}
+		ORDER BY s_idx
+	</select>
+
+	<select id="getSectorsExcept" resultType="hashmap">
+		SELECT * from trekking_sector
+		WHERE tc_id=#{tc_id} and g_idx!=#{g_idx}
+		ORDER BY g_idx, s_idx
+	</select>
+
+	<insert id="insertSector">
+		INSERT INTO trekking_sector (tc_id, g_idx, s_idx, lat, lng, tcs_type)
+		VALUES (#{tc_id}, #{g_idx}, #{s_idx}, #{lat}, #{lng}, #{tcs_type})
+		ON DUPLICATE KEY UPDATE lat=#{lat}, lng=#{lng}, tcs_type=#{tcs_type}
+	</insert>
+
+	<insert id="insertSectors" parameterType="java.util.List">
+		INSERT INTO trekking_sector (tc_id, g_idx, s_idx, lat, lng, tcs_type)
+		VALUES
+		<foreach collection="sectors" item="sector" index="index" open="(" separator="),("  close=")">
+			#{sector.tc_id}, #{sector.g_idx}, #{sector.s_idx}, #{sector.lat}, #{sector.lng}, #{sector.tcs_type}
+		</foreach>
+	</insert>
+
+	<update id="updateSectorGroupIndex">
+		UPDATE trekking_sector
+		<set>
+			g_idx = #{new_g_idx}
+		</set>
+		WHERE tc_id=#{tc_id} and g_idx=#{old_g_idx}
+	</update>
+
+	<delete id="deleteSectorsInGroups">
+		DELETE from trekking_sector
+		WHERE tc_id=#{tc_id} and g_idx in 
+		<foreach collection="g_idxs" item="g_idx" index="index" open="(" separator=","  close=")">
+			#{g_idx}
+		</foreach>
+	</delete>
+	
+	<delete id="deleteSectors">
+		DELETE from trekking_sector
+		WHERE tc_id=#{tc_id} and g_idx=#{g_idx}
+	</delete>
+
+
+
+
+	<update id="updateRelatedSector">
+		UPDATE
+			trekking_course	tc
+			INNER JOIN trekking_group tcg ON tc.tc_id=tcg.tc_id
+			INNER JOIN trekking_sector tcs ON tc.tc_id=tcs.tc_id AND tcg.g_idx=tcs.g_idx
+			SET tcs.lat=#{lat}, tcs.lng=#{lng}
+			WHERE tc.cid=#{cid} AND tcg.pid=#{pid}
+	</update>
+
+
+	<select id="getTrekkingGroupByPid" resultType="hashmap">
+		select
+		  tc.tc_id, tc.course_name
+		from trekking_group tg
+		join trekking_course tc on tc.tc_id = tg.tc_id
+        where pid = #{pid}
+	</select>
+
+	<select id="getTrekkingCourseByCid" resultType="hashmap">
+		select
+		  tc.tc_id, tc.course_name
+		from trekking_course tc
+		where tc_type=2 and cid = #{cid}
+		order by course_name
+	</select>
+
+	<!-- 이미지 지도   -->
+	<select id="getImapCount" resultType="int">
+		SELECT COUNT(*) from image_map
+	</select>
+	
+	<select id="getImap" resultType="hashmap">
+		SELECT im.*	,
+		<choose>
+			<when test="lang == 'en'">
+				imn.en name
+			</when>
+			<when test="lang == 'cn'">
+				imn.cn name
+			</when>
+			<when test="lang == 'jp'">
+				imn.jp name
+			</when>
+			<when test="lang == 'ko'">
+				imn.ko name
+			</when>
+			<otherwise>
+				imn.ko name
+			</otherwise>
+		</choose>
+		from
+		image_map im
+		JOIN image_map_nm imn on im.mid = imn.mid
+		WHERE im.mid=#{mid} and status = 1
+	</select>
+	
+	<select id="getImaps" resultType="hashmap">
+		SELECT 
+			im.mid,
+			<choose>
+				<when test="lang == 'en'">
+					imn.en name,
+				</when>
+				<when test="lang == 'cn'">
+					imn.cn name,
+				</when>
+				<when test="lang == 'jp'">
+					imn.jp name,
+				</when>
+				<when test="lang == 'ko'">
+					imn.ko name,
+				</when>
+				<otherwise>
+					imn.ko name,
+					imn.en name_en,
+					imn.cn name_cn,
+					imn.jp name_jp,
+				</otherwise>
+			</choose>
+			im.zoom,
+			im.lat,
+			im.lng,
+			im.w,
+			im.h,
+			im.header,
+			im.tile_info,
+			im.status,
+			im.map_res_url
+		FROM
+			image_map im
+		JOIN image_map_nm imn on im.mid = imn.mid
+		WHERE im.status = 1
+		ORDER BY im.mid asc
+	</select>
+	
+	<insert id="insertImap" useGeneratedKeys="true" keyProperty="mid" keyColumn="mid">
+		INSERT INTO image_map (
+			<if test="_parameter.containsKey('zoom')">zoom,</if>
+			<if test="_parameter.containsKey('map_res_url')">map_res_url,</if>
+			<if test="_parameter.containsKey('lat')">lat,</if>
+			<if test="_parameter.containsKey('lng')">lng,</if>
+			<if test="_parameter.containsKey('header')">header,</if>
+			<if test="_parameter.containsKey('width')">w,</if>
+			<if test="_parameter.containsKey('height')">h,</if>
+			tile_info, status)
+		VALUES (
+		 	<if test="_parameter.containsKey('zoom')">#{zoom},</if>
+			<if test="_parameter.containsKey('map_res_url')">#{map_res_url},</if>
+			<if test="_parameter.containsKey('lat')"> #{lat},</if>
+			<if test="_parameter.containsKey('lng')">#{lng},</if>
+			<if test="_parameter.containsKey('header')">#{header},</if>
+			<if test="_parameter.containsKey('width')">#{width},</if>
+			<if test="_parameter.containsKey('height')">#{height},</if>
+			#{tile_info}, 1)
+	</insert>
+	
+	<update id="updateImap">
+		UPDATE image_map m
+		JOIN image_map_nm mn ON m.mid=mn.mid
+		<set>
+			<if test="_parameter.containsKey('zoom')">zoom = #{zoom},</if>			
+			<if test="_parameter.containsKey('map_res_url')">map_res_url = #{map_res_url},</if>
+			<if test="_parameter.containsKey('lat')">lat = #{lat},</if>
+			<if test="_parameter.containsKey('lng')">lng = #{lng},</if>
+			<if test="_parameter.containsKey('width')">w = #{width},</if>
+			<if test="_parameter.containsKey('height')">h = #{height},</if>
+			<if test="_parameter.containsKey('header')">header = #{header},</if>
+			<if test="_parameter.containsKey('tile_info')">tile_info = #{tile_info},</if>
+			<if test="_parameter.containsKey('ko')">ko = #{ko},</if>
+			<if test="_parameter.containsKey('en')">en = #{en},</if>
+			<if test="_parameter.containsKey('cn')">cn = #{cn},</if>
+			<if test="_parameter.containsKey('jp')">jp = #{jp},</if>
+			<if test="_parameter.containsKey('status')">status = #{status}</if>
+		</set>
+		WHERE m.mid = #{mid}
+	</update>
+
+	<insert id="insertImapLocalizedStrings">
+		INSERT INTO image_map_nm (mid, ko, en, cn, jp)
+		VALUES (#{mid}, #{ko}, #{en}, #{cn}, #{jp})
+	</insert>
+	
+	<delete id="deleteImap">
+		DELETE im, imn
+		FROM image_map im
+		JOIN image_map_nm imn ON im.mid = imn.mid
+		where im.mid = #{id}
+	</delete>
+	
+
+	<!-- 지도 전용 장소들... -->
+	<select id="getSpotCount" resultType="int">
+		SELECT COUNT(*) from spot
+	</select>
+	
+	<select id="getSpot" resultType="hashmap">
+		SELECT p.*,
+		<choose>
+			<when test="lang == 'en'">
+				pn.en name
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn name
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp name
+			</when>
+			<otherwise>
+				pn.ko name
+			</otherwise>
+		</choose>
+		from
+		spot as p
+		INNER JOIN spot_nm as pn ON p.pid=pn.pid
+		WHERE p.pid=#{pid}
+	</select>
+	
+	<select id="getSpots" resultType="hashmap">
+		SELECT p.*,
+		<choose>
+			<when test="lang == 'en'">
+				pn.en as name
+			</when>
+			<when test="lang == 'cn'">
+				pn.cn as name
+			</when>
+			<when test="lang == 'jp'">
+				pn.jp as name
+			</when>
+			<when test="lang == 'ko'">
+				pn.ko as name
+			</when>
+			<otherwise>
+				pn.ko as name, 
+				pn.en as name_en, 
+				pn.cn as name_cn, 
+				pn.jp as name_jp
+			</otherwise>
+		</choose>
+		FROM
+		spot p
+		INNER JOIN spot_nm pn ON p.pid=pn.pid
+		<if test="mid > 0"> where p.mid = #{mid} </if>
+		ORDER BY p.pid asc		
+		<if test="count > 0">
+		limit #{count} offset #{from}
+		</if>
+	</select>
+	
+	<insert id="insertSpot" useGeneratedKeys="true" keyProperty="pid" keyColumn="pid">
+		INSERT INTO spot (lat, lng, map_type, map_res_url,
+			 <if test="_parameter.containsKey('text_direction')">
+			 	text_direction,
+			 </if>			 
+			 <if test="_parameter.containsKey('display_zoom')">
+			 	display_zoom, 
+			 </if>
+			<if test="_parameter.containsKey('display_zoom_max')">
+				display_zoom_max,
+			</if>
+			<if test="_parameter.containsKey('name_display')">
+				name_display,
+			</if>
+			 <if test="_parameter.containsKey('width')">
+			 	w, 
+			 </if>
+			 <if test="_parameter.containsKey('height')">
+			 	h, 
+			 </if>
+			<if test="_parameter.containsKey('type')">
+				type,
+			</if>
+			<if test="_parameter.containsKey('text_rotate')">
+				text_rotate,
+			</if>
+			<if test="_parameter.containsKey('font_size')">
+				font_size,
+			</if>
+		mid)
+		VALUES (#{lat}, #{lng}, #{map_type}, #{map_res_url},
+		 <if test="_parameter.containsKey('text_direction')">
+		 	#{text_direction}, 
+		 </if>		 
+		 <if test="_parameter.containsKey('display_zoom')">
+		 	#{display_zoom}, 
+		 </if>
+		<if test="_parameter.containsKey('display_zoom_max')">
+			#{display_zoom_max},
+		</if>
+		<if test="_parameter.containsKey('name_display')">
+			#{name_display},
+		</if>
+		 <if test="_parameter.containsKey('width')">
+		 	#{width}, 
+		 </if>
+		 <if test="_parameter.containsKey('height')">
+		 	#{height}, 
+		 </if>
+		<if test="_parameter.containsKey('type')">
+			#{type},
+		</if>
+		<if test="_parameter.containsKey('text_rotate')">
+			#{text_rotate},
+		</if>
+		<if test="_parameter.containsKey('font_size')">
+			#{font_size},
+		</if>
+		#{mid})
+	</insert>
+		
+	<update id="updateSpot">
+		UPDATE spot s
+			INNER JOIN spot_nm sn ON s.pid=sn.pid
+			<set>
+				<if test="_parameter.containsKey('lat')">lat = #{lat},</if>
+				<if test="_parameter.containsKey('lng')">lng = #{lng},</if>
+				<if test="_parameter.containsKey('map_type')">map_type = #{map_type},</if>
+				<if test="_parameter.containsKey('map_res_url')">map_res_url = #{map_res_url},</if>
+				<if test="_parameter.containsKey('status')">status = #{status},</if>
+				<if test="_parameter.containsKey('mid')">mid = #{mid},</if>
+				<if test="_parameter.containsKey('text_direction')">text_direction = #{text_direction},</if>				
+				<if test="_parameter.containsKey('display_zoom')">display_zoom = #{display_zoom},</if>
+				<if test="_parameter.containsKey('display_zoom_max')">display_zoom_max = #{display_zoom_max},</if>
+				<if test="_parameter.containsKey('name_display')">name_display = #{name_display},</if>
+				<if test="_parameter.containsKey('width')">w = #{width},</if>
+				<if test="_parameter.containsKey('height')">h = #{height},</if>
+				<if test="_parameter.containsKey('type')">type = #{type},</if>
+				<if test="_parameter.containsKey('text_rotate')">text_rotate = #{text_rotate},</if>
+				<if test="_parameter.containsKey('font_size')">font_size = #{font_size},</if>
+				<if test="_parameter.containsKey('ko')">ko = #{ko},</if>
+				<if test="_parameter.containsKey('en')">en = #{en},</if>
+				<if test="_parameter.containsKey('cn')">cn = #{cn},</if>
+				<if test="_parameter.containsKey('jp')">jp = #{jp},</if>
+			</set>
+			WHERE s.pid = #{pid}
+	</update>
+	
+	<insert id="insertSpotLocalizedStrings">
+		INSERT INTO spot_nm (pid, ko, en, cn, jp)
+		VALUES (#{pid}, #{ko}, #{en}, #{cn}, #{jp})
+	</insert>
+
+	<delete id="deleteSpot">
+		DELETE p, pn
+		FROM
+		spot as p
+		INNER JOIN spot_nm as pn ON p.pid=pn.pid
+		WHERE p.pid=#{id}
+	</delete>
+
+
+	<select id="getSpotsList" resultType="hashmap">
+		SELECT 
+			p.*,
+			<choose>
+				<when test="lang == 'en'">
+					pn.en as name
+				</when>
+				<when test="lang == 'cn'">
+					pn.cn as name
+				</when>
+				<when test="lang == 'jp'">
+					pn.jp as name
+				</when>
+				<otherwise>
+					pn.ko as name
+				</otherwise>
+			</choose>
+		FROM
+		spot p
+		JOIN spot_nm pn ON p.pid=pn.pid
+		JOIN image_map im on p.mid = im.mid
+		WHERE p.status = 1
+		ORDER BY pid
+	</select>
+
+
+
+
+
+<!-- 조회용 쿼리... 뭘 조회해??? -->
+<!-- 특정 유저의 이벤트 트레킹 완료 기록 조회. -->
+	<select id="getTrekkingCompleteByUser" resultType="hashmap">
+		<!-- SELECT utc.*, tc.course_name, u.name -->
+		SELECT *
+			FROM user_trekking_cert utc
+			JOIN trekking_course tc ON tc.tc_type=#{tc_type} AND tc.tc_id=utc.tc_id
+			JOIN user u ON u.uid=utc.uid
+			WHERE utc.uid=#{uid}
+			ORDER BY issued_time DESC
+	</select>
+
+<!--event 용-->
+	<select id="getEventCount" resultType="int">
+		SELECT COUNT(*) from events
+		<if test="cid > 0">WHERE cid=#{cid}</if>
+	</select>
+
+	<select id="getEvents" resultType="hashmap">
+		SELECT e.*,
+		<choose>
+			<when test="lang == 'en'">
+				en.en as name, et.en as text, ec.en as cf
+			</when>
+			<when test="lang == 'cn'">
+				en.cn as name, et.cn as text, ec.cn as cf
+			</when>
+			<when test="lang == 'jp'">
+				en.jp as name, et.jp as text, ec.jp as cf
+			</when>
+			<when test="lang == 'ko'">
+				en.ko as name, et.ko as text, ec.ko as cf
+			</when>
+			<otherwise>
+				en.ko as name,
+				en.en as name_en,
+				en.cn as name_cn,
+				en.jp as name_jp,
+
+				et.ko as text,
+				et.en as text_en,
+				et.cn as text_cn,
+				et.jp as text_jp,
+
+				ec.ko as cf,
+				ec.en as cf_en,
+				ec.cn as cf_cn,
+				ec.jp as cf_jp
+			</otherwise>
+		</choose>
+		from
+		events as e
+		INNER JOIN events_nm as en ON e.eid=en.eid
+		INNER JOIN events_tx as et ON e.eid=et.eid
+		INNER JOIN events_cf as ec ON e.eid=ec.eid
+
+		ORDER BY e.eid asc
+		<if test="count > 0">
+			limit #{count} offset #{from}
+		</if>
+	</select>
+
+	<insert id="insertEvent" useGeneratedKeys="true" keyProperty="eid" keyColumn="eid">
+		insert into events
+		<set>
+			<if test="_parameter.containsKey('pid')">pid = #{pid},</if>
+			status = 1
+		</set>
+	</insert>
+
+	<update id="updateEvent">
+		update events
+		<set>
+			<if test="_parameter.containsKey('image')">image = #{image},</if>
+			<if test="_parameter.containsKey('pid')">pid = #{pid},</if>
+			<if test="_parameter.containsKey('status')">status = #{status},</if>
+		</set>
+		where eid = #{eid}
+	</update>
+
+	<insert id="insertEventSub">
+		insert into ${table}
+		<set>
+			<if test="_parameter.containsKey('eid')">eid = #{eid},</if>
+			<if test="_parameter.containsKey('ko')">ko = #{ko},</if>
+			<if test="_parameter.containsKey('en')">en = #{en},</if>
+			<if test="_parameter.containsKey('cn')">cn = #{cn},</if>
+			<if test="_parameter.containsKey('jp')">jp = #{jp},</if>
+		</set>
+	</insert>
+
+	<update id="updateEventSub">
+		update ${table}
+		<set>
+			<if test="_parameter.containsKey('ko')">ko = #{ko},</if>
+			<if test="_parameter.containsKey('en')">en = #{en},</if>
+			<if test="_parameter.containsKey('cn')">cn = #{cn},</if>
+			<if test="_parameter.containsKey('jp')">jp = #{jp},</if>
+		</set>
+		where eid = #{eid}
+	</update>
+
+	<delete id="deleteEvent">
+		DELETE p, pn, pt, pa, pccv, pcf, pcv
+		from
+		events as e
+		INNER JOIN events_nm as en ON e.eid=en.eid
+		INNER JOIN events_tx as et ON e.eid=et.eid
+		INNER JOIN events_cf as ec ON e.eid=ec.eid
+		WHERE e.eid=#{id}
+	</delete>
+
+	<select id="getTouchLogCount" resultType="int">
+		SELECT COUNT(*) from touch_log
+	</select>
+	<select id="getTouchLogList" resultType="hashmap">
+		select
+			tl.*,
+			case
+				when table_type = 'P' then (select ko from pl_nm where pid = tl.pid)
+				else (select ko from spot_nm where pid = tl.pid)
+			end 'name'
+		from
+			touch_log tl
+		order by cnt desc
+		<if test="count > 0">
+			limit #{count} offset #{from}
+		</if>
+	</select>
+
+	<update id="updateTouchLog">
+		INSERT INTO touch_log (table_type, pid) VALUES (#{table_type}, #{pid})
+  		ON DUPLICATE KEY UPDATE cnt = cnt+1;
+	</update>
+
+	<delete id="deleteTouchLog">
+		DELETE
+		FROM
+		touch_log
+		WHERE tid=#{id}
+	</delete>
+</mapper>

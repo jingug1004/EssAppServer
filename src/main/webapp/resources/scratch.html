@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<script
+  src="https://code.jquery.com/jquery-3.3.1.min.js"
+  integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+  crossorigin="anonymous"></script>
+  
+  <script>
+	function doTest() {
+		var url = 'http://openapi.gbis.go.kr/ws/rest/busstationservice/searcharound?serviceKey=8ES06buQEh86VT%2B6GO7W2auOWjo1FJTxRILkYZdGEPiJSZ7Tq7IWBhzu4vqLUDNU1wNa0NkulKxB38wSXRzfLQ%3D%3D&x=127.10989&y=37.03808';
+		$.get(url, function(data, status){
+			console.log('data:', data);
+			console.log('status:', status);
+		});
+	}
+  </script>
+<title>Insert title here</title>
+
+</head>
+<body>
+
+<input type="submit" value="get" name="" onclick="doTest()">
+
+</body>
+</html>
